@@ -1,18 +1,15 @@
 const a = require("axios");
 
-// 🔴 مفتاح الـ API الخاص بك من جوجل
-const GEMINI_API_KEY = "AQ.Ab8RN6IHWt15RukkrqNOaKm8sr_58cmeHDccpSOgtAM-PjVyPQ"; 
-
 module.exports = {
   config: {
     name: "gemini",
     aliases: ["ai", "chat", "chama"],
-    version: "1.0.0",
+    version: "1.0.2",
     author: "Simo",
     countDown: 3,
     role: 0,
-    shortDescription: "Official Gemini AI",
-    longDescription: "Talk directly to official Gemini API",
+    shortDescription: "Free Gemini AI",
+    longDescription: "Talk with Gemini AI easily",
     category: "AI",
     guide: "/gemini [your question]"
   },
@@ -21,23 +18,18 @@ module.exports = {
     const p = args.join(" ");
     if (!p) return api.sendMessage("❌ عافاك اكتب السؤال أو البرومبت ديالك.", event.threadID, event.messageID);
 
-    if (GEMINI_API_KEY === "ضع_مفتاح_جوجل_هنا") {
-      return api.sendMessage("❌ عافاك حط مفتاح الـ API key ديالك فالمسار المخصص له داخل الكود أولاً.", event.threadID, event.messageID);
-    }
-
     api.setMessageReaction("⏳", event.messageID, () => {}, true);
 
+    // إضافة أمر خفي ليجيب البوت بالدارجة المغربية أو العربية
+    const finalPrompt = p + " (جاوبني بالدارجة المغربية أو العربية بشكل طبيعي)";
+
     try {
-      // الاتصال المباشر واليومي بسيرفرات جوجل الرسمية
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const url = `https://deku-rest-api.eugene-dev.com/gemini?prompt=${encodeURIComponent(finalPrompt)}`;
       
-      const res = await a.post(url, {
-        contents: [{ parts: [{ text: p }] }]
-      });
+      const res = await a.get(url);
+      const reply = res.data?.gemini || res.data?.reply || res.data?.response || res.data?.data;
 
-      const reply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!reply) throw new Error("استجابة غير متوقعة من سيرفر جوجل.");
+      if (!reply) throw new Error("استجابة خاوية من السيرفر.");
 
       api.setMessageReaction("✅", event.messageID, () => {}, true);
       api.sendMessage(reply, event.threadID, (err, i) => {
@@ -46,9 +38,24 @@ module.exports = {
       }, event.messageID);
 
     } catch (error) {
-      console.error("🔴 Gemini Official Error:", error.response?.data || error.message);
+      console.error("🔴 API Error:", error.message);
       api.setMessageReaction("❌", event.messageID, () => {}, true);
-      api.sendMessage("⚠ وقع مشكل فالاتصال بسيرفرات جوجل الرسمية، تأكد من الـ API Key.", event.threadID, event.messageID);
+      
+      // نظام احتياطي في حالة تعطل السيرفر الأول
+      try {
+        const backupUrl = `https://api.kenliejugarap.com/freegemini/?text=${encodeURIComponent(finalPrompt)}`;
+        const resBackup = await a.get(backupUrl);
+        const backupReply = resBackup.data?.response || resBackup.data?.reply;
+        
+        if (backupReply) {
+          api.setMessageReaction("✅", event.messageID, () => {}, true);
+          return api.sendMessage(backupReply, event.threadID, (err, i) => {
+             if (i) global.GoatBot.onReply.set(i.messageID, { commandName: this.config.name, author: event.senderID });
+          }, event.messageID);
+        }
+      } catch (err) {}
+
+      api.sendMessage("⚠ السيرفرات البديلة حتى هي عليها ضغط دابا، جرب من بعد شوية.", event.threadID, event.messageID);
     }
   },
 
@@ -59,16 +66,15 @@ module.exports = {
 
     api.setMessageReaction("⏳", event.messageID, () => {}, true);
 
+    const finalPrompt = p + " (جاوبني بالدارجة المغربية أو العربية بشكل طبيعي)";
+
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const url = `https://deku-rest-api.eugene-dev.com/gemini?prompt=${encodeURIComponent(finalPrompt)}`;
       
-      const res = await a.post(url, {
-        contents: [{ parts: [{ text: p }] }]
-      });
+      const res = await a.get(url);
+      const reply = res.data?.gemini || res.data?.reply || res.data?.response || res.data?.data;
 
-      const reply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!reply) throw new Error("استجابة غير متوقعة من سيرفر جوجل.");
+      if (!reply) throw new Error("استجابة خاوية.");
 
       api.setMessageReaction("✅", event.messageID, () => {}, true);
       api.sendMessage(reply, event.threadID, (err, i) => {
@@ -78,7 +84,7 @@ module.exports = {
 
     } catch (error) {
       api.setMessageReaction("❌", event.messageID, () => {}, true);
-      api.sendMessage("⚠ وقع مشكل أثناء الرد من طرف الذكاء الاصطناعي الرسمي.", event.threadID, event.messageID);
+      api.sendMessage("⚠ وقع مشكل أثناء الرد من طرف الذكاء الاصطناعي.", event.threadID, event.messageID);
     }
   }
 };
