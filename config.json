@@ -16,12 +16,12 @@
   "nickNameBot": "🌀𓊆✦ 𝗦𝗶𝗺𝗼 ✦ 𝗕𝗼𝘁•𝗩𝗶𝗽𓊇🌀",
   "prefix": "!",
   "adminOnly": {
-    "enable": false,
+    "enable": true,
     "ignoreCommand": []
   },
   "adminBot": [
-    "61583046174688",
-    "",
+    "100085064047077",
+    "61590544914432",
     ""
   ],
   "whiteListMode": {
