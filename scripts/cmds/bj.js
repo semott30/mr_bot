@@ -13,8 +13,9 @@ module.exports = {
         const { threadID, messageID, senderID } = event;
         const mention = Object.keys(event.mentions)[0] || (event.messageReply && event.messageReply.senderID);
         
-        if (!mention) return api.sendMessage("⚠️ Tag the victim!", threadID, messageID);
+        if (!mention) return api.sendMessage("Tag the victim!", threadID, messageID);
 
+        // المسار هنا تم تعديله ليكون متوافقاً مع مجلد الكاش في جذر المشروع
         const imgPath = __dirname + "/../../cache/bj_" + senderID + "_" + mention + ".png";
         const bgUrl = "https://i.postimg.cc/FK5Ywy0D/20260612-061402.jpg";
         const token = "6628568379%7Cc1e620fa708a1d5696fb991c1bde5662";
@@ -39,7 +40,6 @@ module.exports = {
                 ctx.restore();
             };
 
-            // Avatar coordinates and sizes
             drawCircularImage(myAvatar, 70, 160, 230);
             drawCircularImage(targetAvatar, 640, 80, 230);
 
@@ -47,7 +47,7 @@ module.exports = {
             fs.writeFileSync(imgPath, buffer);
             api.sendMessage({ attachment: fs.createReadStream(imgPath) }, threadID, () => fs.unlinkSync(imgPath), messageID);
         } catch (error) {
-            api.sendMessage("❌ Error generating image: " + error.message, threadID, messageID);
+            api.sendMessage("Error generating image: " + error.message, threadID, messageID);
         }
     }
 };
