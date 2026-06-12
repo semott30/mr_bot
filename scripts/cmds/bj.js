@@ -1,10 +1,11 @@
 const fs = require("fs");
 const { createCanvas, loadImage } = require("canvas");
+const path = require("path"); // زدنا هاد المكتبة باش نتفاداو مشاكل المسارات
 
 module.exports = {
     config: {
         name: "bj",
-        version: "2.0",
+        version: "2.1",
         role: 0,
         author: "Simo",
         category: "fun"
@@ -13,10 +14,15 @@ module.exports = {
         const { threadID, messageID, senderID } = event;
         const mention = Object.keys(event.mentions)[0] || (event.messageReply && event.messageReply.senderID);
         
-        if (!mention) return api.sendMessage("Tag the victim!", threadID, messageID);
+        if (!mention) return api.sendMessage("⚠️ Tag the victim!", threadID, messageID);
 
-        // المسار هنا تم تعديله ليكون متوافقاً مع مجلد الكاش في جذر المشروع
-        const imgPath = __dirname + "/../../cache/bj_" + senderID + "_" + mention + ".png";
+        // هاد السطر هو اللي غيحل المشكل: كيتأكد واش كاين مجلد cache فجذر المشروع
+        const cacheDir = path.join(process.cwd(), "cache");
+        if (!fs.existsSync(cacheDir)) {
+            fs.mkdirSync(cacheDir);
+        }
+
+        const imgPath = path.join(cacheDir, `bj_${senderID}_${mention}.png`);
         const bgUrl = "https://i.postimg.cc/FK5Ywy0D/20260612-061402.jpg";
         const token = "6628568379%7Cc1e620fa708a1d5696fb991c1bde5662";
 
@@ -45,9 +51,13 @@ module.exports = {
 
             const buffer = canvas.toBuffer("image/png");
             fs.writeFileSync(imgPath, buffer);
-            api.sendMessage({ attachment: fs.createReadStream(imgPath) }, threadID, () => fs.unlinkSync(imgPath), messageID);
+            
+            api.sendMessage({ attachment: fs.createReadStream(imgPath) }, threadID, () => {
+                if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+            }, messageID);
+            
         } catch (error) {
-            api.sendMessage("Error generating image: " + error.message, threadID, messageID);
+            api.sendMessage("❌ Error generating image: " + error.message, threadID, messageID);
         }
     }
 };
