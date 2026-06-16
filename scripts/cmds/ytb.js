@@ -1,272 +1,159 @@
-"use strict";
+const axios = require("axios");
+const fs = require('fs');
 
-const path = require("path");
-const fs   = require("fs-extra");
-const api  = require("./lib/sifu-api");
-
-const VALID_QUALITIES = ["240", "360", "480", "720", "1080"];
-const DEFAULT_QUALITY = "480";
-const FALLBACK_LADDER = ["480", "360", "240"];
+const baseApiUrl = async () => {
+	const base = await axios.get(
+`https://raw.githubusercontent.com/Mostakim0978/D1PT0/refs/heads/main/baseApiUrl.json`
+	);
+	return base.data.api;
+};
 
 module.exports = {
-    config: {
-        name:        "ytb",
-        aliases:     ["yt", "youtube", "ytvideo", "ytsearch"],
-        version:     "1.0.0",
-        author:      "SIFAT",
-        category:    "media",
-        role:        0,
-        countDown:   8,
-        description: { en: "Search & download any YouTube video. Supports search, URL, quality picker, auto-fallback." },
-        guide:       { en: "{pn} [query | URL] [-q 240|360|480|720|1080] [-list]\n{pn} pick <n>" },
-    },
+	config: {
+		name: "ytb",
+		version: "1.1.4",
+		aliases: ['youtube'],
+		author: "dipto",
+		countDown: 5,
+		role: 0,
+		description: {
+			en: "Download video, audio, and info from YouTube"
+		},
+		category: "media",
+		guide: {
+			en: "  {pn} [video|-v] [<video name>|<video link>]: use to download video from YouTube."
+				+ "\n   {pn} [audio|-a] [<video name>|<video link>]: use to download audio from YouTube"
+				+ "\n   {pn} [info|-i] [<video name>|<video link>]: use to view video information from YouTube"
+				+ "\n   Example:"
+				+ "\n {pn} -v chipi chipi chapa chapa"
+				+ "\n {pn} -a chipi chipi chapa chapa"
+				+ "\n {pn} -i chipi chipi chapa chapa"
+		}
+	},
+	onStart: async ({ api, args, event, commandName }) => {
+		const action = args[0].toLowerCase();
+		
+					const checkurl = /^(?:https?:\/\/)?(?:m\.|www\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))((\w|-){11})(?:\S+)?$/;
+    const urlYtb = checkurl.test(args[1]);
+		let videoID
+  if(urlYtb){
+		if (action === '-v' || action === '-a') {
+			try {
+				const format = action === '-v' ? 'mp4' : 'mp3';
+				const path = `ytb_${format}_${videoID}.${format}`;
+	  
+	const match = args[1].match(checkurl);
+  videoID = match ? match[1] : null;
+				const { data: { title, downloadLink, quality } } = await axios.get(`${await baseApiUrl()}/ytDl3?link=${videoID}&format=${format}&quality=3`);
+await api.sendMessage({
+					body: `• Title: ${title}\n• Quality: ${quality}`,
+					attachment: await dipto(downloadLink, path)
+				}, event.threadID, () => fs.unlinkSync(path), event.messageID);
+			} catch (e) {
+				console.error(e);
+				return api.sendMessage('❌ Failed to download the video/audio. Please try again later.', event.threadID, event.messageID);
+			}
+		} }
+		args.shift();
+		let keyWord = args.join(" ");
+		const maxResults = 6;
+		let result;
+		try {
+			result = (await axios.get(`${await baseApiUrl()}/ytFullSearch?songName=${keyWord}`)).data.slice(0, maxResults);
+		} catch (err) {
+			return api.sendMessage("❌ An error occurred: " + err.message, event.threadID, event.messageID);
+		}
 
-    onStart: async function ({ args, event, message, api: botApi }) {
-        return module.exports._run({
-            args: args || [],
-            ctx:  {
-                reply: message.reply.bind(message),
-                event,
-                api:   botApi,
-            },
-        });
-    }, 
+		if (result.length === 0) {
+			return api.sendMessage("⭕ No search results match the keyword: " + keyWord, event.threadID, event.messageID);
+		}
 
-    _run: async function ({ args, ctx }) {
-        const event = ctx.event || {};
+		let msg = "";
+		let i = 1;
+		const thumbnails = [];
+		for (const info of result) {
+			thumbnails.push(diptoSt(info.thumbnail, `thumbnail.jpg`));
+			msg += `${i++}. ${info.title}\nTime: ${info.time}\nChannel: ${info.channel.name}\n\n`;
+		}
 
-        let mode = "search", quality = DEFAULT_QUALITY, query = "", pickNum = null;
-        const rest = [];
-        for (let i = 0; i < args.length; i++) {
-            const a = args[i].toLowerCase();
-            if (a === "-h" || a === "--help" || a === "help") { mode = "help"; break; }
-            if (a === "-list" || a === "--list" || a === "list") { mode = "list"; continue; }
-            if ((a === "pick" || a === "-pick") && args[i + 1]) {
-                const n = parseInt(args[i + 1], 10);
-                if (!isNaN(n)) { mode = "pick"; pickNum = n; i++; continue; }
-            }
-            if ((a === "-q" || a === "--quality") && VALID_QUALITIES.includes(args[i + 1])) {
-                quality = args[i + 1]; i++; continue;
-            }
-            rest.push(args[i]);
-        }
-        query = rest.join(" ").trim();
+		api.sendMessage({
+			body: msg + "Reply to this message with a number to choose",
+			attachment: await Promise.all(thumbnails)
+		}, event.threadID, (err, info) => {		global.GoatBot.onReply.set(info.messageID, {
+				commandName,
+				messageID: info.messageID,
+				author: event.senderID,
+				result,
+				action
+			});
+		}, event.messageID);
+	},
 
-        if (mode === "help") {
-            return api.safeReply(ctx, [
-                "📺 ʏᴛʙ — ʜᴇʟᴘ",
-                "━━━━━━━━━━━━━━━━━━━━",
-                "ytb <query>             → ꜱᴇᴀʀᴄʜ ᴀɴᴅ ᴅᴏᴡɴʟᴏᴀᴅ",
-                "ytb <YouTube URL>       → ᴅɪʀᴇᴄᴛ ᴅᴏᴡɴʟᴏᴀᴅ",
-                "ytb <query> -list       → ᴛᴏᴘ 6 ʀᴇꜱᴜʟᴛꜱ",
-                "ytb pick <n>            → ᴅᴏᴡɴʟᴏᴀᴅ #ɴ ꜰʀᴏᴍ ʟɪꜱᴛ",
-                "ytb -q 240|360|480|720|1080",
-                "",
-                "ᴡᴏʀᴋꜱ ꜰᴏʀ: ᴀɴɪᴍᴇ · ᴄᴀʀᴛᴏᴏɴ · ꜱᴏɴɢ · ꜱʜᴏʀᴛꜱ · ᴀɴʏᴛʜɪɴɢ",
-                "ᴀᴜᴛᴏ-ꜰᴀʟʟʙᴀᴄᴋ ɪꜰ ꜰɪʟᴇ ɪꜱ ᴛᴏᴏ ʟᴀʀɢᴇ ꜰᴏʀ Messenger.",
-            ].join("\n"));
-        }
+	onReply: async ({ event, api, Reply }) => {
+		const { result, action } = Reply;
+		const choice = parseInt(event.body);
 
-        if (!query && mode === "search") {
-            return api.safeReply(ctx, [
-                "⚠️ ᴀ ꜱᴇᴀʀᴄʜ ǫᴜᴇʀʏ ᴏʀ YouTube ʟɪɴᴋ ɪꜱ ʀᴇQᴜɪʀᴇᴅ.",
-                "",
-                "ᴇxᴀᴍᴘʟᴇꜱ:",
-                "  ytb funny cats",
-                "  ytb naruto vs sasuke -q 720",
-                "  ytb https://youtu.be/xxxxx",
-                "  ytb tom and jerry -list",
-                "  ytb -h",
-            ].join("\n"));
-        }
+		if (isNaN(choice) || choice <= 0 || choice > result.length) {
+			return api.sendMessage('❌ Invalid choice. Please reply with a valid number.', event.threadID, event.messageID);
+		}
 
-        let progressId = null;
-        const sendProgress = async (text) => {
-            try {
-                const m = await api.safeReply(ctx, text);
-                if (m?.messageID) progressId = m.messageID;
-            } catch (_) {}
-        };
-        const delProgress = () => { api.safeUnsend(ctx, progressId); progressId = null; };
+		const selectedVideo = result[choice - 1];
+		const videoID = selectedVideo.id;
 
-        try {
-            await api.pruneCache();
-            let videoUrl, videoTitle, videoUploader, videoDuration;
+		if (action === '-v' || action === 'video' || action === 'mp4' || action === '-a'  || action === 'audio' || action === 'mp3' || action === 'music') {
+			try {
+				let format = ['-a', 'audio', 'mp3', 'music'].includes(action) ? 'mp3' : 'mp4';
+				const path = `ytb_${format}_${videoID}.${format}`;
+				const { data: { title, downloadLink, quality } } = await axios.get(`${await baseApiUrl()}/ytDl3?link=${videoID}&format=${format}&quality=3`);
 
-            if (mode === "pick") {
-                const recalled = api.recallSearch("ytb", ctx);
-                if (!recalled) {
-                    return api.safeReply(ctx, "❌ ɴᴏ ᴀᴄᴛɪᴠᴇ ʟɪꜱᴛ ꜰᴏᴜɴᴅ.\nRun:  ytb <query> -list  first.");
-                }
-                const idx = pickNum - 1;
-                if (idx < 0 || idx >= recalled.results.length) {
-                    return api.safeReply(ctx, `❌ ɪɴᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ. ᴄʜᴏᴏꜱᴇ 1–${recalled.results.length}.`);
-                }
-                const pick = recalled.results[idx];
-                videoUrl      = api.normalizeYouTubeUrl(pick.url);
-                videoTitle    = pick.title;
-                videoUploader = pick.uploader;
-                videoDuration = pick.duration;
-                api.clearPicker("ytb", ctx);
-                api.safeReact(ctx, "📥");
-                await sendProgress(
-                    `📥 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠɪᴅᴇᴏ...\n\n📺 ${videoTitle}\n📊 ǫᴜᴀʟɪᴛʏ: ${quality}ᴘ\n⏳ ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...`,
-                );
+				api.unsendMessage(Reply.messageID);
+				await api.sendMessage({
+					body: `• Title: ${title}\n• Quality: ${quality}`,
+					attachment: await dipto(downloadLink, path)
+				}, event.threadID, () => fs.unlinkSync(path), event.messageID);
+			} catch (e) {
+				console.error(e);
+				return api.sendMessage('❌ Failed to download the video/audio. Please try again later.', event.threadID, event.messageID);
+			}
+		}
 
-            } else if (mode === "list") {
-                api.safeReact(ctx, "🔍");
-                await sendProgress(`🔍 ꜱᴇᴀʀᴄʜɪɴɢ YouTube...\n"${query}"\n⏳ ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...`);
-
-                const imgPath   = path.join(api.config.CACHE_DIR, `ytb_list_${Date.now()}.png`);
-                const imgResult = await api.downloadSearchImage(
-                    "/api/video/search-image",
-                    { q: query, limit: 6, cmd: "ytb pick <1-6>" },
-                    imgPath,
-                );
-                delProgress();
-                if (!imgResult.results?.length) {
-                    api.safeReact(ctx, "❌");
-                    return api.safeReply(ctx, `❌ ɴᴏ ʀᴇꜱᴜʟᴛꜱ ꜰᴏᴜɴᴅ ꜰᴏʀ "${query}".`);
-                }
-                api.rememberSearch("ytb", ctx, imgResult.results, "video");
-                api.safeReact(ctx, "✅");
-                await api.safeReply(ctx, { attachment: fs.createReadStream(imgResult.path) });
-                setTimeout(() => fs.unlink(imgResult.path).catch(() => {}), 12_000);
-                return;
-
-            } else {
-                if (api.isYouTubeUrl(query)) {
-                    videoUrl = api.normalizeYouTubeUrl(query);
-                    api.safeReact(ctx, "📥");
-                    await sendProgress(
-                        `📥 ꜰᴇᴛᴄʜɪɴɢ ᴠɪᴅᴇᴏ ꜰʀᴏᴍ ʟɪɴᴋ...\n📊 ǫᴜᴀʟɪᴛʏ: ${quality}ᴘ\n⏳ ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...`,
-                    );
-                } else {
-                    api.safeReact(ctx, "🔍");
-                    await sendProgress(`🔍 ꜱᴇᴀʀᴄʜɪɴɢ YouTube...\n"${query}"\n⏳ ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...`);
-
-                    const data    = await api.httpGetJson("/api/video/search", { q: query, limit: 1 });
-                    const results = data?.results || [];
-                    if (!results.length || !results[0].url) {
-                        delProgress();
-                        api.safeReact(ctx, "❌");
-                        return api.safeReply(ctx, `❌ ɴᴏ ʀᴇꜱᴜʟᴛ ꜰᴏᴜɴᴅ ꜰᴏʀ "${query}". ᴛʀʏ ᴀ ᴅɪꜰꜰᴇʀᴇɴᴛ ǫᴜᴇʀʏ.`);
-                    }
-                    const top     = results[0];
-                    videoUrl      = api.normalizeYouTubeUrl(top.url);
-                    videoTitle    = top.title;
-                    videoUploader = top.uploader;
-                    videoDuration = top.duration;
-                    delProgress();
-                    api.safeReact(ctx, "📥");
-                    await sendProgress(
-                        `📥 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠɪᴅᴇᴏ...\n\n📺 ${videoTitle}\n` +
-                        `👤 ${videoUploader || "?"}\n📊 ǫᴜᴀʟɪᴛʏ: ${quality}ᴘ\n⏳ ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...`,
-                    );
-                }
-            }
-
-            if (!videoTitle && videoUrl) {
-                try {
-                    const info = await api.getInfo(videoUrl);
-                    videoTitle    = info.title;
-                    videoUploader = info.uploader;
-                    videoDuration = info.duration;
-                } catch (_) {}
-            }
-
-            const reqIdx = VALID_QUALITIES.indexOf(quality);
-            const ladder = [
-                quality,
-                ...FALLBACK_LADDER.filter(q => {
-                    const i = VALID_QUALITIES.indexOf(q);
-                    return i !== -1 && i < reqIdx;
-                }),
-            ];
-            const videoId = api.extractVideoId(videoUrl);
-
-            let finalResult = null, finalQuality = quality, wasCached = false, finalElapsed = 0;
-
-            for (let i = 0; i < ladder.length; i++) {
-                const tryQ   = ladder[i];
-                let   result = videoId ? await api.cacheLookup(videoId, `ytb_${tryQ}`, "mp4") : null;
-                const cached = !!result;
-
-                if (!result) {
-                    const targetPath = videoId
-                        ? api.cacheFilenameFor(videoId, `ytb_${tryQ}`, "mp4")
-                        : path.join(api.config.CACHE_DIR, `tmp_ytb_${Date.now()}.mp4`);
-                    try {
-                        const dl = await api.downloadToDisk(
-                            "/api/video/download",
-                            { url: videoUrl, quality: tryQ },
-                            targetPath,
-                        );
-                        result       = { path: dl.path, size: dl.size };
-                        finalElapsed = dl.elapsedMs;
-                    } catch (err) {
-                        if (i === ladder.length - 1) throw err;
-                        continue;
-                    }
-                }
-
-                if (result.size < 1024) {
-                    await fs.unlink(result.path).catch(() => {});
-                    if (i === ladder.length - 1) {
-                        delProgress();
-                        api.safeReact(ctx, "❌");
-                        return api.safeReply(ctx, "❌ ᴅᴏᴡɴʟᴏᴀᴅ ꜰᴀɪʟᴇᴅ — ᴇᴍᴘᴛʏ ꜰɪʟᴇ.");
-                    }
-                    continue;
-                }
-
-                const sizeMB = result.size / (1024 * 1024);
-                if (sizeMB <= api.config.MAX_FILE_MB) {
-                    finalResult = result; finalQuality = tryQ; wasCached = cached; break;
-                }
-                if (i < ladder.length - 1) {
-                    delProgress();
-                    await sendProgress(
-                        `⚠️ ${tryQ}ᴘ = ${sizeMB.toFixed(1)} ᴍʙ — ᴇxᴄᴇᴇᴅꜱ Messenger ʟɪᴍɪᴛ.\n` +
-                        `↘ ᴛʀʏɪɴɢ ${ladder[i + 1]}ᴘ...`,
-                    );
-                }
-            }
-
-            delProgress();
-
-            if (!finalResult) {
-                api.safeReact(ctx, "❌");
-                return api.safeReply(ctx,
-                    `❌ ᴀʟʟ ǫᴜᴀʟɪᴛɪᴇꜱ ᴇxᴄᴇᴇᴅ Messenger ʟɪᴍɪᴛ (${api.config.MAX_FILE_MB} ᴍʙ).\n` +
-                    `ᴛʀʏ ᴀ ꜱʜᴏʀᴛᴇʀ ᴠɪᴅᴇᴏ ᴏʀ ᴜꜱᴇ -q 360`,
-                );
-            }
-
-            const fellBack = finalQuality !== quality;
-            api.safeReact(ctx, "✅");
-            await api.safeReply(ctx, {
-                body: [
-                    "📺 ᴠɪᴅᴇᴏ ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ",
-                    "━━━━━━━━━━━━━━━━━━━━",
-                    `📺 ᴛɪᴛʟᴇ    : ${videoTitle || "?"}`,
-                    videoUploader ? `👤 ᴄʜᴀɴɴᴇʟ   : ${videoUploader}` : null,
-                    videoDuration ? `⏱ ᴅᴜʀᴀᴛɪᴏɴ  : ${api.formatDuration(videoDuration)}` : null,
-                    `📊 ǫᴜᴀʟɪᴛʏ  : ${finalQuality}ᴘ${fellBack ? ` (ꜰᴀʟʟʙᴀᴄᴋ ꜰʀᴏᴍ ${quality}ᴘ)` : ""}`,
-                    `🔊 ᴀᴜᴅɪᴏ    : ✅ ɪɴᴄʟᴜᴅᴇᴅ`,
-                    `📦 ꜱɪᴢᴇ     : ${api.formatBytes(finalResult.size)}`,
-                    wasCached
-                        ? `⚡ ꜱᴏᴜʀᴄᴇ   : ᴄᴀᴄʜᴇ ʜɪᴛ ⚡`
-                        : `⚡ ᴛɪᴍᴇ     : ${api.formatElapsed(finalElapsed)}`,
-                ].filter(Boolean).join("\n"),
-                attachment: fs.createReadStream(finalResult.path),
-            });
-
-        } catch (err) {
-            delProgress();
-            api.safeReact(ctx, "❌");
-            console.error("[ytb] error:", err.message);
-            return api.safeReply(ctx, api.formatError(err));
-        }
-    },
+	if (action === '-i' || action === 'info') {
+			try {
+				const { data } = await axios.get(`${await baseApiUrl()}/ytfullinfo?videoID=${videoID}`);
+				api.unsendMessage(Reply.messageID);
+				await api.sendMessage({
+					body: `✨ | 𝚃𝚒𝚝𝚕𝚎: ${data.title}\n⏳ | 𝙳𝚞𝚛𝚊𝚝𝚒𝚘𝚗: ${data.duration / 60} minutes\n𝚁𝚎𝚜𝚘𝚕𝚞𝚝𝚒𝚘𝚗: ${data.resolution}\n👀 | 𝚅𝚒𝚎𝚠 𝙲𝚘𝚞𝚗𝚝: ${data.view_count}\n👍🏻 | 𝙻𝚒𝚔𝚎𝚜: ${data.like_count}\n📬 | 𝙲𝚘𝚖𝚖𝚎𝚗𝚝𝚜: ${data.comment_count}\n♻️ | 𝙲𝚊𝚝𝚎𝚐𝚘𝚛𝚒𝚎𝚜: ${data.categories[0]}\n🌐 | 𝙲𝚑𝚊𝚗𝚗𝚎𝚕: ${data.channel}\n🧍🏻‍♂️ | 𝚄𝚙𝚕𝚘𝚊𝚍𝚎𝚛 𝙸𝚍: ${data.uploader_id}\n👥 | 𝚂𝚞𝚋𝚜𝚌𝚛𝚒𝚋𝚎𝚛𝚜: ${data.channel_follower_count}\n🔗 | 𝙲𝚑𝚊𝚗𝚗𝚎𝚕 𝚄𝚛𝚕: ${data.channel_url}\n🔗 | 𝚅𝚒𝚍𝚎𝚘 𝚄𝚛𝚕: ${data.webpage_url}`,
+					attachment: await diptoSt(data.thumbnail, 'info_thumb.jpg')
+				}, event.threadID, event.messageID);
+			} catch (e) {
+				console.error(e);
+				return api.sendMessage('❌ Failed to retrieve video info. Please try again later.', event.threadID, event.messageID);
+			}
+		}
+	}
 };
+async function dipto(url,pathName) {
+	try {
+		const response = (await axios.get(url,{
+			responseType: "arraybuffer"
+		})).data;
+
+		fs.writeFileSync(pathName, Buffer.from(response));
+		return fs.createReadStream(pathName);
+	}
+	catch (err) {
+		throw err;
+	}
+}
+async function diptoSt(url,pathName) {
+	try {
+		const response = await axios.get(url,{
+			responseType: "stream"
+		});
+		response.data.path = pathName;
+		return response.data;
+	}
+	catch (err) {
+		throw err;
+	}
+}
