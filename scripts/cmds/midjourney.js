@@ -1,41 +1,23 @@
-const request = require('request');
-const fs = require('fs');
-const path = require('path');
-
 module.exports = {
   config: {
     name: "midjourney",
-    version: "2.0.0",
-    aliases: ["mj", "imagine"],
-    author: "Simo-Fix",
-    role: 0,
+    version: "1.0.0",
+    aliases: ["mj"],
+    author: "Simo",
+    description: "Generate image",
     category: "ai",
-    description: "توليد صور بالذكاء الاصطناعي",
-    guide: "{pn} [وصف الصورة]"
+    guide: "{pn} [prompt]"
   },
 
-  onStart: async function({ event, args, message }) {
+  onStart: async function({ args, message }) {
     const prompt = args.join(" ");
-    if (!prompt) return message.reply("❌ دير وصف للصورة.");
-
-    const loadingMsg = await message.send("⏳ جاري الرسم...");
-    const imgPath = path.join(__dirname, `mj_${Date.now()}.png`);
-    const apiUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`;
-
-    request(apiUrl)
-      .pipe(fs.createWriteStream(imgPath))
-      .on('close', () => {
-        message.reply({
-          body: "✅ هاهي الصورة ديالك:",
-          attachment: fs.createReadStream(imgPath)
-        }, () => {
-          fs.unlinkSync(imgPath);
-          message.unsend(loadingMsg.messageID);
-        });
-      })
-      .on('error', (e) => {
-        message.unsend(loadingMsg.messageID);
-        message.reply("❌ خطأ: " + e.message);
-      });
+    if (!prompt) return message.reply("❌ دير وصف للصورة!");
+    
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 99999)}`;
+    
+    return message.reply({
+      body: "✅ هاهي الصورة ديالك:",
+      attachment: await global.utils.getStreamFromURL(imageUrl)
+    });
   }
 };
