@@ -1,98 +1,46 @@
-const { getTime, drive } = global.utils;
+const { getTime } = global.utils;
 
 module.exports = {
 	config: {
 		name: "leave",
-		version: "1.4",
-		author: "NTKhang",
+		version: "2.0",
+		author: "Simo",
 		category: "events"
 	},
 
-	langs: {
-		vi: {
-			session1: "sáng",
-			session2: "trưa",
-			session3: "chiều",
-			session4: "tối",
-			leaveType1: "tự rời",
-			leaveType2: "bị kick",
-			defaultLeaveMessage: "{userName} đã {type} khỏi nhóm"
-		},
-		en: {
-			session1: "morning",
-			session2: "noon",
-			session3: "afternoon",
-			session4: "evening",
-			leaveType1: "left",
-			leaveType2: "was kicked from",
-			defaultLeaveMessage: "{userName} {type} the group"
-		}
-	},
+	onStart: async ({ threadsData, event, api, usersData }) => {
+		if (event.logMessageType != "log:unsubscribe") return;
 
-	onStart: async ({ threadsData, message, event, api, usersData, getLang }) => {
-		if (event.logMessageType == "log:unsubscribe")
-			return async function () {
-				const { threadID } = event;
-				const threadData = await threadsData.get(threadID);
-				if (!threadData.settings.sendLeaveMessage)
-					return;
-				const { leftParticipantFbId } = event.logMessageData;
-				if (leftParticipantFbId == api.getCurrentUserID())
-					return;
-				const hours = getTime("HH");
+		const { threadID, logMessageData } = event;
+		const leftParticipantFbId = logMessageData.leftParticipantFbId;
+		if (leftParticipantFbId == api.getCurrentUserID()) return;
 
-				const threadName = threadData.threadName;
-				const userName = await usersData.getName(leftParticipantFbId);
+		const threadData = await threadsData.get(threadID);
+		if (!threadData.settings || threadData.settings.sendLeaveMessage === false) return;
 
-				// {userName}   : name of the user who left the group
-				// {type}       : type of the message (leave)
-				// {boxName}    : name of the box
-				// {threadName} : name of the box
-				// {time}       : time
-				// {session}    : session
+		// جلب معلومات المستخدم والجنس
+		const userInfo = await api.getUserInfo(leftParticipantFbId);
+		const userName = userInfo[leftParticipantFbId]?.name || "عضو";
+		const gender = userInfo[leftParticipantFbId]?.gender; // 1 = أنثى، 2 = ذكر
 
-				let { leaveMessage = getLang("defaultLeaveMessage") } = threadData.data;
-				const form = {
-					mentions: leaveMessage.match(/\{userNameTag\}/g) ? [{
-						tag: userName,
-						id: leftParticipantFbId
-					}] : null
-				};
+		// تحديد كلمة الخروج حسب الجنس
+		let genderText = (gender === 1) ? "خرجات 👧" : "خرج 👦";
+		let leaveType = (logMessageData.leftParticipantFbId === event.author) ? "خرجت برضاها/خرج برضاه" : "تم طرده/طردها";
 
-				leaveMessage = leaveMessage
-					.replace(/\{userName\}|\{userNameTag\}/g, userName)
-					.replace(/\{type\}/g, leftParticipantFbId == event.author ? getLang("leaveType1") : getLang("leaveType2"))
-					.replace(/\{threadName\}|\{boxName\}/g, threadName)
-					.replace(/\{time\}/g, hours)
-					.replace(/\{session\}/g, hours <= 10 ?
-						getLang("session1") :
-						hours <= 12 ?
-							getLang("session2") :
-							hours <= 18 ?
-								getLang("session3") :
-								getLang("session4")
-					);
+		// الرسالة اللي مسجلة فـ setleave أو الافتراضية
+		let leaveMessage = threadData.data?.leaveMessage || "{userName} {type} من الكروب.";
 
-				form.body = leaveMessage;
+		// تعويض الـ Shortcuts
+		leaveMessage = leaveMessage
+			.replace(/{userName}/g, userName)
+			.replace(/{userNameTag}/g, userName)
+			.replace(/{type}/g, genderText)
+			.replace(/{boxName}/g, threadData.threadName)
+			.replace(/{threadName}/g, threadData.threadName);
 
-				if (leaveMessage.includes("{userNameTag}")) {
-					form.mentions = [{
-						id: leftParticipantFbId,
-						tag: userName
-					}];
-				}
+		// إضافة الرسالة النهائية مع حقوق المطور
+		const finalMessage = `${leaveMessage}\n\n_________________\nمطور البوت: 𝗦𝗜𝗠𝗢`;
 
-				if (threadData.data.leaveAttachment) {
-					const files = threadData.data.leaveAttachment;
-					const attachments = files.reduce((acc, file) => {
-						acc.push(drive.getFile(file, "stream"));
-						return acc;
-					}, []);
-					form.attachment = (await Promise.allSettled(attachments))
-						.filter(({ status }) => status == "fulfilled")
-						.map(({ value }) => value);
-				}
-				message.send(form);
-			};
+		api.sendMessage(finalMessage, threadID);
 	}
 };
