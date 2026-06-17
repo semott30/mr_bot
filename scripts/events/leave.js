@@ -1,46 +1,44 @@
-const { getTime } = global.utils;
+module.exports.config = {
+  name: "setleave",
+  aliases: ["setl"],
+  version: "3.0.0",
+  author: "Simo",
+  role: 0,
+  category: "custom",
+  guide: "دير ريبلاي لرسالة واكتب !setleave"
+};
 
-module.exports = {
-	config: {
-		name: "leave",
-		version: "2.0",
-		author: "Simo",
-		category: "events"
-	},
+// 1. تسجيل الرسالة
+module.exports.onStart = async ({ message, event, threadsData }) => {
+  const { threadID, messageReply } = event;
+  if (!messageReply || !messageReply.body) return message.reply("⚠️ ديري ريبلاي على الرسالة اللي بغيتيها تكون رسالة مغادرة واكتبي !setleave");
+  
+  const threadData = await threadsData.get(threadID) || { data: {} };
+  threadData.data.leaveMessage = messageReply.body;
+  await threadsData.set(threadID, threadData);
+  message.reply("✅ تم حفظ رسالة المغادرة بنجاح!");
+};
 
-	onStart: async ({ threadsData, event, api, usersData }) => {
-		if (event.logMessageType != "log:unsubscribe") return;
+// 2. إرسال الرسالة أوتوماتيكياً (Event داخلي)
+module.exports.onEvent = async function ({ event, api, threadsData }) {
+  if (event.logMessageType !== "log:unsubscribe") return;
+  const { threadID, logMessageData } = event;
+  if (logMessageData.leftParticipantFbId === api.getCurrentUserID()) return;
 
-		const { threadID, logMessageData } = event;
-		const leftParticipantFbId = logMessageData.leftParticipantFbId;
-		if (leftParticipantFbId == api.getCurrentUserID()) return;
+  const threadData = await threadsData.get(threadID) || {};
+  const baseMessage = threadData.data?.leaveMessage || "{userName} {type} من الكروب.";
+  
+  try {
+    const userInfo = await api.getUserInfo(logMessageData.leftParticipantFbId);
+    const userName = userInfo[logMessageData.leftParticipantFbId]?.name || "عضو";
+    const gender = userInfo[logMessageData.leftParticipantFbId]?.gender;
+    let genderText = (gender === 1) ? "خرجات 👧" : "خرج 👦";
 
-		const threadData = await threadsData.get(threadID);
-		if (!threadData.settings || threadData.settings.sendLeaveMessage === false) return;
+    let finalMessage = baseMessage
+        .replace(/{userName}/g, userName)
+        .replace(/{type}/g, genderText);
 
-		// جلب معلومات المستخدم والجنس
-		const userInfo = await api.getUserInfo(leftParticipantFbId);
-		const userName = userInfo[leftParticipantFbId]?.name || "عضو";
-		const gender = userInfo[leftParticipantFbId]?.gender; // 1 = أنثى، 2 = ذكر
-
-		// تحديد كلمة الخروج حسب الجنس
-		let genderText = (gender === 1) ? "خرجات 👧" : "خرج 👦";
-		let leaveType = (logMessageData.leftParticipantFbId === event.author) ? "خرجت برضاها/خرج برضاه" : "تم طرده/طردها";
-
-		// الرسالة اللي مسجلة فـ setleave أو الافتراضية
-		let leaveMessage = threadData.data?.leaveMessage || "{userName} {type} من الكروب.";
-
-		// تعويض الـ Shortcuts
-		leaveMessage = leaveMessage
-			.replace(/{userName}/g, userName)
-			.replace(/{userNameTag}/g, userName)
-			.replace(/{type}/g, genderText)
-			.replace(/{boxName}/g, threadData.threadName)
-			.replace(/{threadName}/g, threadData.threadName);
-
-		// إضافة الرسالة النهائية مع حقوق المطور
-		const finalMessage = `${leaveMessage}\n\n_________________\nمطور البوت: 𝗦𝗜𝗠𝗢`;
-
-		api.sendMessage(finalMessage, threadID);
-	}
+    finalMessage += `\n\n_________________\nمطور البوت: 𝗦𝗜𝗠𝗢`;
+    api.sendMessage(finalMessage, threadID);
+  } catch (e) {}
 };
