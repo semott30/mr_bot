@@ -2,80 +2,74 @@ module.exports = {
   config: {
     name: "scan",
     aliases: ["سكان", "فحص"],
-    version: "2.0.0", // النسخة المحدثة بنظام المصيدة
+    version: "4.0.0",
     author: "Simo",
     countDown: 5,
     role: 1, 
-    shortDescription: "كشف مخربي الكنيات الذكي",
-    longDescription: "يتعقب من يقوم بتغيير متكرر وسريع للكنيات (نظام Anti-Spam)",
+    shortDescription: "سجل آخر 10 تغييرات مع الأسماء",
+    longDescription: "يتعقب آخر 10 أعضاء ويخزن أسماءهم فور قيامهم بالتخريب",
     category: "admin",
     guide: "!scan"
   },
 
   onEvent: async function ({ api, event }) {
-    // مراقبة أحداث تغيير الكنيات واسم الكروب فقط
+    // مراقبة تغيير الكنيات واسم المجموعة
     if (!["log:user-nickname", "log:thread-name"].includes(event.logMessageType)) return;
 
     const author = event.author;
-    
-    // استثناء البوت نفسه حتى لا يسجل نفسه
+    const threadID = event.threadID;
+
+    // استثناء البوت نفسه
     if (author === api.getCurrentUserID()) return;
 
-    // تجهيز الذاكرة إذا لم تكن موجودة
-    if (!global.tempCounter) global.tempCounter = {}; // عداد مؤقت للكل
-    if (!global.caughtSpammers) global.caughtSpammers = new Set(); // القائمة النهائية للمخربين
+    if (!global.spamTracker) global.spamTracker = {};
+    if (!global.spamTracker[threadID]) global.spamTracker[threadID] = [];
 
-    // إذا كان الشخص موجوداً مسبقاً في قائمة المخربين، لا داعي لحسابه مجدداً
-    if (global.caughtSpammers.has(author)) return;
-
-    // إنشاء عداد للشخص إذا كانت هذه أول مرة يغير فيها
-    if (!global.tempCounter[author]) {
-      global.tempCounter[author] = { count: 0, timer: null };
+    // البوت يحاول جلب الاسم في نفس اللحظة التي وقع فيها التخريب!
+    let userName = "عضو متخفي";
+    try {
+      const userInfo = await api.getUserInfo(author);
+      if (userInfo && userInfo[author] && userInfo[author].name) {
+        userName = userInfo[author].name; // تخزين الاسم الحقيقي
+      }
+    } catch (e) {
+      // في حالة نادرة جداً إذا فشل جلب الاسم
+      userName = `مجهول (ID: ${author})`;
     }
 
-    // إضافة نقطة (تغيير واحد)
-    global.tempCounter[author].count += 1;
+    let list = global.spamTracker[threadID];
 
-    // إعادة ضبط المؤقت المؤقت: إذا مرت 60 ثانية دون تغيير، امسحه من الذاكرة تماماً
-    clearTimeout(global.tempCounter[author].timer);
-    global.tempCounter[author].timer = setTimeout(() => {
-      delete global.tempCounter[author];
-    }, 60000); // 60 ثانية (يمكنك تغييرها إلى 120000 لدقيقتين)
+    // تحديث مكان المخرب في القائمة إذا كرر العملية
+    list = list.filter(user => user.id !== author);
+    
+    // حفظ الاسم والآيدي معاً
+    list.push({ id: author, name: userName });
 
-    // المصيدة: إذا قام بأكثر من 3 تغييرات في تلك الـ 60 ثانية، فقد تم اصطياده!
-    if (global.tempCounter[author].count >= 4) {
-      global.caughtSpammers.add(author); // إضافته للقائمة السوداء
-      delete global.tempCounter[author]; // مسح عداده المؤقت لتوفير الذاكرة
+    // الاحتفاظ بآخر 10 أشخاص فقط
+    if (list.length > 10) {
+      list.shift();
     }
+
+    global.spamTracker[threadID] = list;
   },
 
   onStart: async function ({ api, event }) {
     const threadID = event.threadID;
 
-    // التحقق من القائمة
-    if (!global.caughtSpammers || global.caughtSpammers.size === 0) {
-      return api.sendMessage("✅ الكروب نقي، ماكين حتى شي سبامر كيبدل بزاف حالياً.", threadID, event.messageID);
+    if (!global.spamTracker || !global.spamTracker[threadID] || global.spamTracker[threadID].length === 0) {
+      return api.sendMessage("✅ الكروب نقي، ماكين حتى سجل لتغيير الكنيات مؤخراً.", threadID, event.messageID);
     }
 
-    let msg = "⚠ قائمة المخربين اللي حصلو كيبدلو الكنيات أو السمية بزاف:\n\n";
-    const spammers = Array.from(global.caughtSpammers);
+    let msg = "⚠ قائمة آخر الأشخاص اللي بدلو الكنيات أو السمية:\n\n";
+    const spammers = global.spamTracker[threadID];
 
-    // تحويل الآيديهات إلى أسماء ليفضحهم
-    for (const uid of spammers) {
-      try {
-        const userInfo = await api.getUserInfo(uid);
-        const name = userInfo[uid]?.name || "عضو غير معروف";
-        msg += `⚠ ${name} 🖕✅🚮\n`;
-      } catch (e) {
-        msg += `⚠ UserID: ${uid} 🖕✅🚮\n`;
-      }
+    // عرض الأسماء اللي سجلها البوت
+    for (const user of spammers) {
+      msg += `⚠ ${user.name} 🖕✅🚮\n`;
     }
 
-    msg += "\n[!] تم تصفية القائمة بعد هذا الفحص.";
+    msg += "\n[!] تم تسجيل الأسماء بواسطة البوت لحظة التغيير.";
     
-    // مسح قائمة المخربين لبدء مراقبة جديدة
-    global.caughtSpammers.clear();
-
     api.sendMessage(msg, threadID, event.messageID);
   }
 };
